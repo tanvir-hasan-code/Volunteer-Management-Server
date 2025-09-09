@@ -28,6 +28,8 @@ async function run() {
       .db("Volunteer-Management")
       .collection("all-volunteerPost");
 
+    const volunteerRequestCollections = client.db("Volunteer-Management").collection("volunteer-request")
+
     app.get("/", (req, res) => {
       res.send("Welcome to Volunteer Management Server Root Page");
     });
@@ -49,6 +51,18 @@ async function run() {
 		  const newNeedVolunteer = req.body;
 		  const result = await postVolunteerCollections.insertOne(newNeedVolunteer);
 		  res.send(result);
+    })
+
+    app.post("/volunteerRequest", async (req, res) => {
+      const reqData = req.body;
+
+      const result = await volunteerRequestCollections.insertOne(reqData);
+      res.send(result)
+    })
+
+    app.get("/allRequestVolunteer", async (req, res) => {
+      const result = await volunteerRequestCollections.find().toArray();
+      res.send(result)
     })
     
     app.get("/manageMyPost/myCreatedPosts", async (req, res) => {
@@ -75,7 +89,6 @@ async function run() {
 
     app.delete("/manageMyPost/:id", async (req, res) => {
       const {id}  = req.params;
-      console.log(id)
       const quarry = { _id: new ObjectId(id) };
       const result = await postVolunteerCollections.deleteOne(quarry);
      res.send(result)
