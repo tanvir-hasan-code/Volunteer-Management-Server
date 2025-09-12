@@ -28,7 +28,9 @@ async function run() {
       .db("Volunteer-Management")
       .collection("all-volunteerPost");
 
-    const volunteerRequestCollections = client.db("Volunteer-Management").collection("volunteer-request")
+    const volunteerRequestCollections = client
+      .db("Volunteer-Management")
+      .collection("volunteer-request");
 
     app.get("/", (req, res) => {
       res.send("Welcome to Volunteer Management Server Root Page");
@@ -42,68 +44,166 @@ async function run() {
     app.get("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
       const id = req.params.id;
       const quarry = { _id: new ObjectId(id) };
-
       const result = await postVolunteerCollections.findOne(quarry);
       res.send(result);
     });
 
-	  app.post("/addVolunteerPost", async (req, res) => {
-		  const newNeedVolunteer = req.body;
-		  const result = await postVolunteerCollections.insertOne(newNeedVolunteer);
-		  res.send(result);
+    app.get("/request/:id", async (req, res) => {
+      const id = req.params.id;
+      const quarry = { postId: id };
+      const result = await volunteerRequestCollections.find(quarry).toArray();
+      res.send(result);
+    });
+
+    app.patch("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const quarry = { _id: new ObjectId(id) };
+
+        const post = await postVolunteerCollections.findOne(quarry);
+
+        if (!post) {
+          return res.status(404).send({ message: "Post not found!" });
+        }
+
+        if (post.volunteersNeeded <= 0) {
+          return res.send({ message: "No more volunteers needed!" });
+        }
+
+        const result = await postVolunteerCollections.findOneAndUpdate(
+          quarry,
+          {
+            $inc: {
+              request_count: 1,
+              volunteersNeeded: -1,
+            },
+          },
+          { returnDocument: "after" }
+        );
+
+        res.send(result.value);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    app.patch("/myCreatedPosts/:id", async (req, res) => {
+      const id = req.params.id;
+      const quarry = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          status: req.body.status,
+        },
+      };
+      const result = await volunteerRequestCollections.updateOne(
+        quarry,
+        updateDoc
+      );
+      res.send(result);
+    });
+
+    app.patch("/updateRequestCount/:id", async (req, res) => {
+      const id = req.params.id;
+      const quarry = { _id: new ObjectId(id) }
+      console.log(id)
+      const updateDocs = {
+            $inc: {
+              request_count: -1,
+              volunteersNeeded: 1,
+            },
+      }
+      
+      const result = await postVolunteerCollections.updateOne(quarry, updateDocs);
+      res.send(result);
     })
+
+    app.post("/addVolunteerPost", async (req, res) => {
+      const newNeedVolunteer = req.body;
+      const result = await postVolunteerCollections.insertOne(newNeedVolunteer);
+      res.send(result);
+    });
 
     app.post("/volunteerRequest", async (req, res) => {
       const reqData = req.body;
-
       const result = await volunteerRequestCollections.insertOne(reqData);
-      res.send(result)
-    })
+      res.send(result);
+    });
 
     app.get("/allRequestVolunteer", async (req, res) => {
       const result = await volunteerRequestCollections.find().toArray();
-      res.send(result)
-    })
-    
+      res.send(result);
+    });
+
     app.get("/manageMyPost/myCreatedPosts", async (req, res) => {
       const email = req.query.email;
-      const quarry = { post_owner: email }
-      
+      const quarry = { post_owner: email };
+
       const result = await postVolunteerCollections.find(quarry).toArray();
-      res.send(result)
+      res.send(result);
+    });
 
-    })
+    app.get("/myRequestedPosts", async (req, res) => {
+      const email = req.query.email;
+      const quarry = { email: email };
 
-    app.put("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
-      const id  = req.params.id;
-      const updateData = req.body;
-      const quarry = { _id: new ObjectId(id) }
-      
-      const result = await postVolunteerCollections.updateOne(quarry, {
-        $set: updateData
-      })
+      const result = await volunteerRequestCollections.find(quarry).toArray();
+      for (const request of result) {
+        const id = request.postId;
+        const postQuery = { _id: new ObjectId(id) };
+        const post = await postVolunteerCollections.findOne(postQuery);
+        request.title = post?.title;
+        request.location = post?.location;
+        request.applicationDeadline = post?.applicationDeadline;
+        request.thumbnail = post?.thumbnail;
+      }
 
       res.send(result);
+    });
 
-    })
+    app.get("/needsNow-post", async (req, res) => {
+      const posts = await postVolunteerCollections
+        .find({})
+        .sort({ applicationDeadline: 1 })
+        .limit(6)
+        .toArray();
+      res.send(posts)
+    });
+
+    app.put("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
+      const id = req.params.id;
+      const updateData = req.body;
+      const quarry = { _id: new ObjectId(id) };
+
+      const result = await postVolunteerCollections.updateOne(quarry, {
+        $set: updateData,
+      });
+
+      res.send(result);
+    });
 
     app.delete("/manageMyPost/:id", async (req, res) => {
-      const {id}  = req.params;
+      const { id } = req.params;
       const quarry = { _id: new ObjectId(id) };
       const result = await postVolunteerCollections.deleteOne(quarry);
-     res.send(result)
-    })
-	  
-	  
+      res.send(result);
+    });
+
+    app.delete("/deleteRequest/:id", async (req, res) => {
+      const id = req.params.id;
+      const quarry = { _id: new ObjectId(id) };
+
+      const result = await volunteerRequestCollections.deleteOne(quarry);
+      res.send(result);
+    });
+
     app.get("/search", async (req, res) => {
       const { q } = req.query;
 
       try {
         const results = await postVolunteerCollections
           .find({
-            $or: [
-              { title: { $regex: q, $options: "i" } },
-            ],
+            $or: [{ title: { $regex: q, $options: "i" } }],
           })
           .toArray();
 
