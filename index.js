@@ -1,16 +1,28 @@
 const express = require("express");
 const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
 const cors = require("cors");
 require("dotenv").config();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5173"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
-// UserName:
-// Password:
+const decoded = Buffer.from(process.env.FIREBASE_ADMIN_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded)
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.ot8ggjo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -20,6 +32,29 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+// verify Firebase Token
+
+const verifyFirebaseToken = async (req, res, next) => {
+  const authHead = req.headers?.authorization;
+  if (!authHead || !authHead.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  const token = authHead.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  const userInfo = await admin.auth().verifyIdToken(token);
+  req.token = userInfo;
+  next();
+};
+
+const verifyTokenEmail = (req, res, next) => {
+  if (req.query.email !== req.token.email) {
+    return res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
 
 async function run() {
   try {
@@ -55,38 +90,43 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const quarry = { _id: new ObjectId(id) };
+    app.patch(
+      "/allVolunteerPosts/detailsPost/:id",
+      verifyFirebaseToken,
+      verifyTokenEmail,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const quarry = { _id: new ObjectId(id) };
 
-        const post = await postVolunteerCollections.findOne(quarry);
+          const post = await postVolunteerCollections.findOne(quarry);
 
-        if (!post) {
-          return res.status(404).send({ message: "Post not found!" });
-        }
+          if (!post) {
+            return res.status(404).send({ message: "Post not found!" });
+          }
 
-        if (post.volunteersNeeded <= 0) {
-          return res.send({ message: "No more volunteers needed!" });
-        }
+          if (post.volunteersNeeded <= 0) {
+            return res.send({ message: "No more volunteers needed!" });
+          }
 
-        const result = await postVolunteerCollections.findOneAndUpdate(
-          quarry,
-          {
-            $inc: {
-              request_count: 1,
-              volunteersNeeded: -1,
+          const result = await postVolunteerCollections.findOneAndUpdate(
+            quarry,
+            {
+              $inc: {
+                request_count: 1,
+                volunteersNeeded: -1,
+              },
             },
-          },
-          { returnDocument: "after" }
-        );
+            { returnDocument: "after" }
+          );
 
-        res.send(result.value);
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: "Internal Server Error" });
+          res.send(result.value);
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ message: "Internal Server Error" });
+        }
       }
-    });
+    );
 
     app.patch("/myCreatedPosts/:id", async (req, res) => {
       const id = req.params.id;
@@ -105,18 +145,21 @@ async function run() {
 
     app.patch("/updateRequestCount/:id", async (req, res) => {
       const id = req.params.id;
-      const quarry = { _id: new ObjectId(id) }
-      console.log(id)
+      const quarry = { _id: new ObjectId(id) };
+      console.log(id);
       const updateDocs = {
-            $inc: {
-              request_count: -1,
-              volunteersNeeded: 1,
-            },
-      }
-      
-      const result = await postVolunteerCollections.updateOne(quarry, updateDocs);
+        $inc: {
+          request_count: -1,
+          volunteersNeeded: 1,
+        },
+      };
+
+      const result = await postVolunteerCollections.updateOne(
+        quarry,
+        updateDocs
+      );
       res.send(result);
-    })
+    });
 
     app.post("/addVolunteerPost", async (req, res) => {
       const newNeedVolunteer = req.body;
@@ -135,31 +178,41 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/manageMyPost/myCreatedPosts", async (req, res) => {
-      const email = req.query.email;
-      const quarry = { post_owner: email };
+    app.get(
+      "/manageMyPost/myCreatedPosts",
+      verifyFirebaseToken,
+      verifyTokenEmail,
+      async (req, res) => {
+        const email = req.query.email;
+        const quarry = { post_owner: email };
 
-      const result = await postVolunteerCollections.find(quarry).toArray();
-      res.send(result);
-    });
-
-    app.get("/myRequestedPosts", async (req, res) => {
-      const email = req.query.email;
-      const quarry = { email: email };
-
-      const result = await volunteerRequestCollections.find(quarry).toArray();
-      for (const request of result) {
-        const id = request.postId;
-        const postQuery = { _id: new ObjectId(id) };
-        const post = await postVolunteerCollections.findOne(postQuery);
-        request.title = post?.title;
-        request.location = post?.location;
-        request.applicationDeadline = post?.applicationDeadline;
-        request.thumbnail = post?.thumbnail;
+        const result = await postVolunteerCollections.find(quarry).toArray();
+        res.send(result);
       }
+    );
 
-      res.send(result);
-    });
+    app.get(
+      "/myRequestedPosts",
+      verifyFirebaseToken,
+      verifyTokenEmail,
+      async (req, res) => {
+        const email = req.query.email;
+        const quarry = { email: email };
+
+        const result = await volunteerRequestCollections.find(quarry).toArray();
+        for (const request of result) {
+          const id = request.postId;
+          const postQuery = { _id: new ObjectId(id) };
+          const post = await postVolunteerCollections.findOne(postQuery);
+          request.title = post?.title;
+          request.location = post?.location;
+          request.applicationDeadline = post?.applicationDeadline;
+          request.thumbnail = post?.thumbnail;
+        }
+
+        res.send(result);
+      }
+    );
 
     app.get("/needsNow-post", async (req, res) => {
       const posts = await postVolunteerCollections
@@ -167,10 +220,10 @@ async function run() {
         .sort({ applicationDeadline: 1 })
         .limit(6)
         .toArray();
-      res.send(posts)
+      res.send(posts);
     });
 
-    app.put("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
+    app.put("/allVolunteerPosts/detailsPost/:id", verifyFirebaseToken, verifyTokenEmail, async (req, res) => {
       const id = req.params.id;
       const updateData = req.body;
       const quarry = { _id: new ObjectId(id) };
