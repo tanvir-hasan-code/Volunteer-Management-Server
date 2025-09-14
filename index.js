@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", "https://volunify-site.netlify.app"],
     credentials: true,
   })
 );
@@ -58,7 +58,7 @@ const verifyTokenEmail = (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const postVolunteerCollections = client
       .db("Volunteer-Management")
       .collection("all-volunteerPost");
@@ -76,7 +76,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
+    app.get("/allVolunteerPosts/detailsPost/:id",  async (req, res) => {
       const id = req.params.id;
       const quarry = { _id: new ObjectId(id) };
       const result = await postVolunteerCollections.findOne(quarry);
@@ -92,8 +92,6 @@ async function run() {
 
     app.patch(
       "/allVolunteerPosts/detailsPost/:id",
-      verifyFirebaseToken,
-      verifyTokenEmail,
       async (req, res) => {
         try {
           const id = req.params.id;
@@ -167,7 +165,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/volunteerRequest", async (req, res) => {
+    app.post("/volunteerRequest",  async (req, res) => {
       const reqData = req.body;
       const result = await volunteerRequestCollections.insertOne(reqData);
       res.send(result);
@@ -179,9 +177,7 @@ async function run() {
     });
 
     app.get(
-      "/manageMyPost/myCreatedPosts",
-      verifyFirebaseToken,
-      verifyTokenEmail,
+      "/manageMyPost/myCreatedPosts", verifyFirebaseToken, verifyTokenEmail,
       async (req, res) => {
         const email = req.query.email;
         const quarry = { post_owner: email };
@@ -192,9 +188,7 @@ async function run() {
     );
 
     app.get(
-      "/myRequestedPosts",
-      verifyFirebaseToken,
-      verifyTokenEmail,
+      "/myRequestedPosts", verifyFirebaseToken, verifyTokenEmail,
       async (req, res) => {
         const email = req.query.email;
         const quarry = { email: email };
@@ -223,7 +217,7 @@ async function run() {
       res.send(posts);
     });
 
-    app.put("/allVolunteerPosts/detailsPost/:id", verifyFirebaseToken, verifyTokenEmail, async (req, res) => {
+    app.put("/allVolunteerPosts/detailsPost/:id", async (req, res) => {
       const id = req.params.id;
       const updateData = req.body;
       const quarry = { _id: new ObjectId(id) };
@@ -267,10 +261,10 @@ async function run() {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // await client.close()
   }
